@@ -11,7 +11,7 @@ ti.init(arch=ti.gpu, default_fp=ti.f32)
 # Constants
 WIDTH, HEIGHT = 640, 480
 FOV = math.pi / 3  # 60 degrees
-MAX_DEPTH = 4
+MAX_DEPTH = 2
 BACKGROUND_COLOR = ti.Vector([0.1, 0.1, 0.15])
 
 # Scene limits
@@ -180,11 +180,12 @@ def cube_normal(point: ti.math.vec3, cube_center: ti.math.vec3, size: ti.f32) ->
 
 @ti.func
 def trace_ray(ray_origin: ti.math.vec3, ray_dir: ti.math.vec3, depth: ti.i32) -> ti.math.vec3:
-    """Main ray tracing function with reflections"""
+    """Main ray tracing function with reflections - with recursion limit"""
     # Initialize result color
     result_color = BACKGROUND_COLOR
 
-    # Only trace if we have depth left
+    # Only trace if we have depth left and not too deep recursion
+    print(depth)
     if depth > 0:
         # Find closest intersection
         closest_t = 1e10
@@ -243,7 +244,8 @@ def trace_ray(ray_origin: ti.math.vec3, ray_dir: ti.math.vec3, depth: ti.i32) ->
             # Process each light
             for i in range(num_lights[None]):
                 light = lights[i]
-                light_dir = normalize_vec(light.position - hit_point)
+                light_dir_vec = light.position - hit_point
+                light_dir = normalize_vec(light_dir_vec)
 
                 # Shadow check
                 in_shadow = False
@@ -269,22 +271,27 @@ def trace_ray(ray_origin: ti.math.vec3, ray_dir: ti.math.vec3, depth: ti.i32) ->
                     diffuse = ti.max(0.0, ti.math.dot(normal_to_use, light_dir))
                     color += material.color * light.color * diffuse * light.intensity
 
-            # Reflection
-            reflect_color = ti.math.vec3(0, 0, 0)
-            if material.reflectivity > 0:
+            # Reflection - only if we have depth left and material is reflective
+            reflect_color = BACKGROUND_COLOR
+            if material.reflectivity > 0 and depth > 1:  # depth > 1 means we can recurse one more time
                 reflect_dir = ti.math.reflect(ray_dir, normal_to_use)
+
                 # Add roughness if present
                 if material.roughness > 0:
                     roughness = material.roughness * 0.5
-                    reflect_dir += ti.math.vec3(
-                        (ti.random() * 2.0 - 1.0) * roughness,
-                        (ti.random() * 2.0 - 1.0) * roughness,
-                        (ti.random() * 2.0 - 1.0) * roughness
-                    )
+                    reflect_dir_x = reflect_dir.x + (ti.random() * 2.0 - 1.0) * roughness
+                    reflect_dir_y = reflect_dir.y + (ti.random() * 2.0 - 1.0) * roughness
+                    reflect_dir_z = reflect_dir.z + (ti.random() * 2.0 - 1.0) * roughness
+                    reflect_dir = ti.math.vec3(reflect_dir_x, reflect_dir_y, reflect_dir_z)
                     reflect_dir = normalize_vec(reflect_dir)
 
+                # Recursive call with reduced depth
                 reflect_color = trace_ray(hit_point + reflect_dir * 0.001, reflect_dir, depth - 1)
-                color = color * (1.0 - material.reflectivity) + reflect_color * material.reflectivity
+
+                # Blend reflection
+                reflect_blend = material.reflectivity
+                no_reflect_blend = 1.0 - reflect_blend
+                color = color * no_reflect_blend + reflect_color * reflect_blend
 
             result_color = ti.math.clamp(color, 0.0, 1.0)
 

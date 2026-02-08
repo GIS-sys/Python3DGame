@@ -11,7 +11,7 @@ ti.init(arch=ti.gpu, default_fp=ti.f32)
 # Constants
 WIDTH, HEIGHT = 640, 480
 FOV = math.pi / 3  # 60 degrees
-MAX_DEPTH = 2
+MAX_DEPTH = 4
 BACKGROUND_COLOR = ti.Vector([0.1, 0.1, 0.15])
 
 # Scene limits
@@ -179,14 +179,15 @@ def cube_normal(point: ti.math.vec3, cube_center: ti.math.vec3, size: ti.f32) ->
     return normal
 
 @ti.func
-def trace_ray(ray_origin: ti.math.vec3, ray_dir: ti.math.vec3, depth: ti.i32) -> ti.math.vec3:
-    """Main ray tracing function with reflections - with recursion limit"""
-    # Initialize result color
-    result_color = BACKGROUND_COLOR
+def trace_ray(ray_origin: ti.math.vec3, ray_dir: ti.math.vec3) -> ti.math.vec3:
+    """Main ray tracing function with iterative reflections (no recursion)"""
+    color = ti.math.vec3(0, 0, 0)
+    ray_weight = ti.math.vec3(1, 1, 1)  # How much this ray contributes
+    current_origin = ray_origin
+    current_dir = ray_dir
 
-    # Only trace if we have depth left and not too deep recursion
-    print(depth)
-    if depth > 0:
+    # Iterate up to MAX_DEPTH bounces
+    for bounce in range(MAX_DEPTH):
         # Find closest intersection
         closest_t = 1e10
         closest_normal = ti.math.vec3(0, 0, 1)
@@ -198,10 +199,10 @@ def trace_ray(ray_origin: ti.math.vec3, ray_dir: ti.math.vec3, depth: ti.i32) ->
         # Check spheres
         for i in range(num_spheres[None]):
             sphere = spheres[i]
-            t = ray_sphere_intersect(ray_origin, ray_dir, sphere.center, sphere.radius)
+            t = ray_sphere_intersect(current_origin, current_dir, sphere.center, sphere.radius)
             if t > 0.001 and t < closest_t:
                 closest_t = t
-                hit_point = ray_origin + ray_dir * t
+                hit_point = current_origin + current_dir * t
                 closest_normal = normalize_vec(hit_point - sphere.center)
                 closest_material_idx = sphere.material_idx
                 is_sphere = True
@@ -211,7 +212,7 @@ def trace_ray(ray_origin: ti.math.vec3, ray_dir: ti.math.vec3, depth: ti.i32) ->
         # Check cubes
         for i in range(num_cubes[None]):
             cube = cubes[i]
-            t = ray_cube_intersect(ray_origin, ray_dir, cube.center, cube.size)
+            t = ray_cube_intersect(current_origin, current_dir, cube.center, cube.size)
             if t > 0.001 and t < closest_t:
                 closest_t = t
                 closest_material_idx = cube.material_idx
@@ -219,83 +220,96 @@ def trace_ray(ray_origin: ti.math.vec3, ray_dir: ti.math.vec3, depth: ti.i32) ->
                 closest_center = cube.center
                 closest_size = cube.size
 
-        # If we hit something
-        if closest_material_idx >= 0:
-            # Calculate hit point
-            hit_point = ray_origin + ray_dir * closest_t
+        # If no hit, add background and break
+        if closest_material_idx < 0:
+            color += BACKGROUND_COLOR * ray_weight
+            break
 
-            # Get normal for cube if needed
-            cube_normal_vec = ti.math.vec3(0, 0, 1)
-            if not is_sphere:
-                cube_normal_vec = cube_normal(hit_point, closest_center, closest_size)
+        # Calculate hit point
+        hit_point = current_origin + current_dir * closest_t
 
-            # Use sphere normal or cube normal
-            normal_to_use = closest_normal if is_sphere else cube_normal_vec
+        # Get normal for cube if needed
+        cube_normal_vec = ti.math.vec3(0, 0, 1)
+        if not is_sphere:
+            cube_normal_vec = cube_normal(hit_point, closest_center, closest_size)
 
-            material = materials[closest_material_idx]
+        # Use sphere normal or cube normal
+        normal_to_use = closest_normal if is_sphere else cube_normal_vec
 
-            # Calculate lighting
-            color = ti.math.vec3(0, 0, 0)
+        material = materials[closest_material_idx]
 
-            # Ambient lighting
-            ambient = 0.1
-            color += material.color * ambient
+        # Calculate lighting for this bounce
+        bounce_color = ti.math.vec3(0, 0, 0)
 
-            # Process each light
-            for i in range(num_lights[None]):
-                light = lights[i]
-                light_dir_vec = light.position - hit_point
-                light_dir = normalize_vec(light_dir_vec)
+        # Ambient lighting
+        ambient = 0.1
+        bounce_color += material.color * ambient
 
-                # Shadow check
-                in_shadow = False
-                shadow_ray_origin = hit_point + light_dir * 0.001
+        # Process each light
+        for i in range(num_lights[None]):
+            light = lights[i]
+            light_dir_vec = light.position - hit_point
+            light_dir = normalize_vec(light_dir_vec)
 
-                # Check spheres for shadow
-                for j in range(num_spheres[None]):
-                    sphere = spheres[j]
-                    if ray_sphere_intersect(shadow_ray_origin, light_dir, sphere.center, sphere.radius) > 0:
+            # Shadow check
+            in_shadow = False
+            shadow_ray_origin = hit_point + light_dir * 0.001
+
+            # Check spheres for shadow
+            for j in range(num_spheres[None]):
+                sphere = spheres[j]
+                shadow_t = ray_sphere_intersect(shadow_ray_origin, light_dir, sphere.center, sphere.radius)
+                if shadow_t > 0:
+                    in_shadow = True
+                    break
+
+            # Check cubes for shadow if not in shadow
+            if not in_shadow:
+                for j in range(num_cubes[None]):
+                    cube = cubes[j]
+                    shadow_t = ray_cube_intersect(shadow_ray_origin, light_dir, cube.center, cube.size)
+                    if shadow_t > 0:
                         in_shadow = True
                         break
 
-                # Check cubes for shadow if not in shadow
-                if not in_shadow:
-                    for j in range(num_cubes[None]):
-                        cube = cubes[j]
-                        if ray_cube_intersect(shadow_ray_origin, light_dir, cube.center, cube.size) > 0:
-                            in_shadow = True
-                            break
+            # Add diffuse lighting if not in shadow
+            if not in_shadow:
+                diffuse = ti.max(0.0, ti.math.dot(normal_to_use, light_dir))
+                bounce_color += material.color * light.color * diffuse * light.intensity
 
-                # Add diffuse lighting if not in shadow
-                if not in_shadow:
-                    diffuse = ti.max(0.0, ti.math.dot(normal_to_use, light_dir))
-                    color += material.color * light.color * diffuse * light.intensity
+        # Add this bounce's contribution
+        color += bounce_color * ray_weight
 
-            # Reflection - only if we have depth left and material is reflective
-            reflect_color = BACKGROUND_COLOR
-            if material.reflectivity > 0 and depth > 1:  # depth > 1 means we can recurse one more time
-                reflect_dir = ti.math.reflect(ray_dir, normal_to_use)
+        # Check if we should continue with reflection
+        if material.reflectivity > 0.0:
+            # Calculate reflection direction
+            reflect_dir = ti.math.reflect(current_dir, normal_to_use)
 
-                # Add roughness if present
-                if material.roughness > 0:
-                    roughness = material.roughness * 0.5
-                    reflect_dir_x = reflect_dir.x + (ti.random() * 2.0 - 1.0) * roughness
-                    reflect_dir_y = reflect_dir.y + (ti.random() * 2.0 - 1.0) * roughness
-                    reflect_dir_z = reflect_dir.z + (ti.random() * 2.0 - 1.0) * roughness
-                    reflect_dir = ti.math.vec3(reflect_dir_x, reflect_dir_y, reflect_dir_z)
-                    reflect_dir = normalize_vec(reflect_dir)
+            # Add roughness if present
+            if material.roughness > 0.0:
+                roughness = material.roughness * 0.5
+                reflect_dir = reflect_dir + ti.math.vec3(
+                    (ti.random() * 2.0 - 1.0) * roughness,
+                    (ti.random() * 2.0 - 1.0) * roughness,
+                    (ti.random() * 2.0 - 1.0) * roughness
+                )
+                reflect_dir = normalize_vec(reflect_dir)
 
-                # Recursive call with reduced depth
-                reflect_color = trace_ray(hit_point + reflect_dir * 0.001, reflect_dir, depth - 1)
+            # Update for next iteration
+            current_origin = hit_point + reflect_dir * 0.001
+            current_dir = reflect_dir
 
-                # Blend reflection
-                reflect_blend = material.reflectivity
-                no_reflect_blend = 1.0 - reflect_blend
-                color = color * no_reflect_blend + reflect_color * reflect_blend
+            # Reduce ray weight by reflectivity
+            ray_weight = ray_weight * material.reflectivity
 
-            result_color = ti.math.clamp(color, 0.0, 1.0)
+            # If ray weight is too small, stop
+            if ray_weight.x < 0.01 and ray_weight.y < 0.01 and ray_weight.z < 0.01:
+                break
+        else:
+            # No reflection, stop
+            break
 
-    return result_color
+    return ti.math.clamp(color, 0.0, 1.0)
 
 @ti.kernel
 def render(camera_pos: ti.math.vec3, camera_target: ti.math.vec3,
@@ -318,8 +332,8 @@ def render(camera_pos: ti.math.vec3, camera_target: ti.math.vec3,
         ray_dir = forward + right * u * half_width + up * v * half_height
         ray_dir = normalize_vec(ray_dir)
 
-        # Trace the ray
-        color = trace_ray(camera_pos, ray_dir, MAX_DEPTH)
+        # Trace the ray (iterative, no recursion)
+        color = trace_ray(camera_pos, ray_dir)
 
         # Accumulate for progressive rendering
         if frame == 0:

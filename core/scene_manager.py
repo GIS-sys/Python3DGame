@@ -91,9 +91,9 @@ class SceneManager:
         # Materials
         red_mat = self.add_material((1.0, 0.2, 0.2), reflectivity=0.0)
         blue_mat = self.add_material((0.2, 0.2, 1.0), reflectivity=0.5)
-        green_mat = self.add_material((0.2, 1.0, 0.2), reflectivity=1.0)
-        yellow_mat = self.add_material((1.0, 1.0, 0.2), reflectivity=0.2, roughness=0.1)
-        gray_mat = self.add_material((0.7, 0.7, 0.7), reflectivity=0.05, roughness=0.3)
+        green_mat = self.add_material((0.2, 1.0, 0.2), reflectivity=1.0, roughness=0.2)
+        yellow_mat = self.add_material((1.0, 1.0, 0.2), reflectivity=0.2, roughness=0.0)
+        gray_mat = self.add_material((0.7, 0.7, 0.7), reflectivity=0.05)
 
         # Objects
         self.add_sphere((-2, 1, 0), 1.0, red_mat)
@@ -105,8 +105,8 @@ class SceneManager:
 
         # Lights
         self.add_light((3, 5, 3), 1.0)
-        self.add_light((-3, 5, -3), 0.7, (0.9, 0.9, 1.0))
-        self.add_light((0, 8, 0), 0.5, (1.0, 1.0, 0.8))
+        self.add_light((-3, 5, -3), 1.7, (0.2, 0.2, 1.0))
+        self.add_light((0, 8, 0), 0.5, (1.0, 0.2, 0.2))
 
     def get_pixels_as_numpy(self):
         """Get pixel data as numpy array for display"""

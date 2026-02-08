@@ -336,10 +336,10 @@ def render(camera_pos: ti.math.vec3, camera_target: ti.math.vec3,
         color = trace_ray(camera_pos, ray_dir)
 
         # Accumulate for progressive rendering
-        if frame == 0:
-            accumulator[i, j] = color
-        else:
-            accumulator[i, j] = (accumulator[i, j] * frame + color) / (frame + 1)
+        #if frame == 0:
+        accumulator[i, j] = color
+        #else:
+        #    accumulator[i, j] = (accumulator[i, j] * frame + color) / (frame + 1)
 
         pixels[i, j] = accumulator[i, j]
 
@@ -459,6 +459,11 @@ class Game:
             pygame.K_SPACE: False
         }
 
+        # Sphere control
+        self.rotation_time = 0.0
+        self.rotating_cube_idx = 3
+        self.rotating_sphere_idx = 2
+
         # Mouse control
         self.mouse_pos = None
         self.mouse_sensitivity = 0.002
@@ -467,6 +472,8 @@ class Game:
         self.frame_times = []
         self.fps = 0
         self.font = pygame.font.SysFont(None, 24)
+
+        self.update_camera_vectors()
 
         print("GPU Raytracing Engine Initialized")
         print(f"Using Taichi backend: {ti.cfg.arch}")
@@ -562,88 +569,100 @@ class Game:
                     self.pitch - dy * self.mouse_sensitivity))
                 self.update_camera_vectors()
 
+    def update_objects(self, dt):
+        """Update object animations (like rotating sphere)"""
+        self.rotation_time += dt
+
+        # Update the rotating sphere position
+        sphere_idx = self.rotating_sphere_idx
+        if sphere_idx < num_spheres[None]:
+            # Create a figure-8 or lemniscate motion
+            angle = self.rotation_time * 0.8  # Rotate 0.8 radians per second
+
+            # Lemniscate (figure-8) pattern
+            a = 2.0  # Size of the figure-8
+            denominator = 1.0 + math.sin(angle) * math.sin(angle)
+
+            new_x = a * math.cos(angle) / denominator
+            new_z = a * math.sin(angle) * math.cos(angle) / denominator
+            new_y = 1.5 + 0.3 * math.sin(self.rotation_time * 1.5)  # Bob up and down
+
+            # Get the current sphere and update its position
+            current_sphere = spheres[sphere_idx]  # Read from GPU memory
+            new_center = ti.Vector([new_x, new_y, new_z])
+
+            # Write back to GPU memory
+            spheres[sphere_idx] = Sphere(
+                center=new_center,
+                radius=current_sphere.radius,
+                material_idx=current_sphere.material_idx
+            )
+
     def update_movement(self, dt):
         """Update camera position based on keyboard input"""
         move_speed = 3.0 * dt
 
-        # Calculate forward, right, and up vectors for movement
-        forward = [
-            self.camera_target[0] - self.camera_pos[0],
-            self.camera_target[1] - self.camera_pos[1],
-            self.camera_target[2] - self.camera_pos[2]
-        ]
-
-        # Normalize forward
-        length = math.sqrt(forward[0]**2 + forward[1]**2 + forward[2]**2)
-        if length > 0:
-            forward = [f/length for f in forward]
-
-        # Calculate right vector (cross forward with world up)
-        world_up = [0.0, 1.0, 0.0]
-        right = [
-            forward[1] * world_up[2] - forward[2] * world_up[1],
-            forward[2] * world_up[0] - forward[0] * world_up[2],
-            forward[0] * world_up[1] - forward[1] * world_up[0]
-        ]
-
-        # Normalize right
-        length = math.sqrt(right[0]**2 + right[1]**2 + right[2]**2)
-        if length > 0:
-            right = [r/length for r in right]
-
-        # Apply movement
+        # Apply movement (simpler approach)
         if self.keys[pygame.K_w]:
-            self.camera_pos = [p + f * move_speed for p, f in zip(self.camera_pos, forward)]
-            self.camera_target = [t + f * move_speed for t, f in zip(self.camera_target, forward)]
+            # Move forward along camera-target direction
+            dir_forward = [self.camera_target[i] - self.camera_pos[i] for i in range(3)]
+            length = math.sqrt(sum(d * d for d in dir_forward))
+            if length > 0:
+                dir_forward = [d / length for d in dir_forward]
+                self.camera_pos = [self.camera_pos[i] + dir_forward[i] * move_speed for i in range(3)]
+                self.camera_target = [self.camera_target[i] + dir_forward[i] * move_speed for i in range(3)]
 
         if self.keys[pygame.K_s]:
-            self.camera_pos = [p - f * move_speed for p, f in zip(self.camera_pos, forward)]
-            self.camera_target = [t - f * move_speed for t, f in zip(self.camera_target, forward)]
+            # Move backward
+            dir_forward = [self.camera_target[i] - self.camera_pos[i] for i in range(3)]
+            length = math.sqrt(sum(d * d for d in dir_forward))
+            if length > 0:
+                dir_forward = [d / length for d in dir_forward]
+                self.camera_pos = [self.camera_pos[i] - dir_forward[i] * move_speed for i in range(3)]
+                self.camera_target = [self.camera_target[i] - dir_forward[i] * move_speed for i in range(3)]
 
         if self.keys[pygame.K_a]:
-            self.camera_pos = [p - r * move_speed for p, r in zip(self.camera_pos, right)]
-            self.camera_target = [t - r * move_speed for t, r in zip(self.camera_target, right)]
+            # Strafe left - use camera right vector
+            dir_forward = [self.camera_target[i] - self.camera_pos[i] for i in range(3)]
+            world_up = [0.0, 1.0, 0.0]
+            dir_right = [
+                dir_forward[1] * world_up[2] - dir_forward[2] * world_up[1],
+                dir_forward[2] * world_up[0] - dir_forward[0] * world_up[2],
+                dir_forward[0] * world_up[1] - dir_forward[1] * world_up[0]
+            ]
+            length = math.sqrt(sum(d * d for d in dir_right))
+            if length > 0:
+                dir_right = [d / length for d in dir_right]
+                self.camera_pos = [self.camera_pos[i] - dir_right[i] * move_speed for i in range(3)]
+                self.camera_target = [self.camera_target[i] - dir_right[i] * move_speed for i in range(3)]
 
         if self.keys[pygame.K_d]:
-            self.camera_pos = [p + r * move_speed for p, r in zip(self.camera_pos, right)]
-            self.camera_target = [t + r * move_speed for t, r in zip(self.camera_target, right)]
+            # Strafe right
+            dir_forward = [self.camera_target[i] - self.camera_pos[i] for i in range(3)]
+            world_up = [0.0, 1.0, 0.0]
+            dir_right = [
+                dir_forward[1] * world_up[2] - dir_forward[2] * world_up[1],
+                dir_forward[2] * world_up[0] - dir_forward[0] * world_up[2],
+                dir_forward[0] * world_up[1] - dir_forward[1] * world_up[0]
+            ]
+            length = math.sqrt(sum(d * d for d in dir_right))
+            if length > 0:
+                dir_right = [d / length for d in dir_right]
+                self.camera_pos = [self.camera_pos[i] + dir_right[i] * move_speed for i in range(3)]
+                self.camera_target = [self.camera_target[i] + dir_right[i] * move_speed for i in range(3)]
 
         if self.keys[pygame.K_SPACE]:
+            # Move up
             self.camera_pos[1] += move_speed
             self.camera_target[1] += move_speed
 
         if self.keys[pygame.K_LSHIFT]:
+            # Move down
             self.camera_pos[1] -= move_speed
             self.camera_target[1] -= move_speed
 
-        # Update camera vectors for roll (Q/E)
-        if self.keys[pygame.K_q] or self.keys[pygame.K_e]:
-            # Simple roll by rotating up vector
-            angle = 1.5 * dt
-            if self.keys[pygame.K_e]:
-                angle = -angle
-
-            up = self.camera_up
-            # Rotate up vector around forward axis
-            cos_a = math.cos(angle)
-            sin_a = math.sin(angle)
-
-            # Find axis perpendicular to forward and current up
-            axis = [
-                forward[1] * up[2] - forward[2] * up[1],
-                forward[2] * up[0] - forward[0] * up[2],
-                forward[0] * up[1] - forward[1] * up[0]
-            ]
-
-            # Rodrigues rotation formula
-            dot = up[0]*forward[0] + up[1]*forward[1] + up[2]*forward[2]
-            for i in range(3):
-                up[i] = up[i] * cos_a + axis[i] * sin_a + forward[i] * dot * (1 - cos_a)
-
-            # Normalize and store
-            length = math.sqrt(up[0]**2 + up[1]**2 + up[2]**2)
-            if length > 0:
-                self.camera_up = [u/length for u in up]
+        # Update camera vectors after movement
+        self.update_camera_vectors()
 
     def render_ui(self, render_time):
         """Render the UI overlay"""
@@ -695,6 +714,9 @@ class Game:
 
             # Update camera movement
             self.update_movement(dt)
+
+            # Update object animations
+            self.update_objects(dt)
 
             # Start GPU rendering
             render_start = time.time()

@@ -113,44 +113,48 @@ def ray_cube_intersect(ray_origin: ti.math.vec3, ray_dir: ti.math.vec3,
     min_bounds = cube_center - half_size
     max_bounds = cube_center + half_size
 
+    t = -1.0  # Default return value
+
+    # Check X slab
     tmin = (min_bounds.x - ray_origin.x) / ray_dir.x
     tmax = (max_bounds.x - ray_origin.x) / ray_dir.x
 
     if tmin > tmax:
         tmin, tmax = tmax, tmin
 
+    # Check Y slab
     tymin = (min_bounds.y - ray_origin.y) / ray_dir.y
     tymax = (max_bounds.y - ray_origin.y) / ray_dir.y
 
     if tymin > tymax:
         tymin, tymax = tymax, tymin
 
-    if (tmin > tymax) or (tymin > tmax):
-        return -1.0
+    if not (tmin > tymax or tymin > tmax):
+        # Update tmin/tmax with Y slab
+        if tymin > tmin:
+            tmin = tymin
+        if tymax < tmax:
+            tmax = tymax
 
-    if tymin > tmin:
-        tmin = tymin
-    if tymax < tmax:
-        tmax = tymax
+        # Check Z slab
+        tzmin = (min_bounds.z - ray_origin.z) / ray_dir.z
+        tzmax = (max_bounds.z - ray_origin.z) / ray_dir.z
 
-    tzmin = (min_bounds.z - ray_origin.z) / ray_dir.z
-    tzmax = (max_bounds.z - ray_origin.z) / ray_dir.z
+        if tzmin > tzmax:
+            tzmin, tzmax = tzmax, tzmin
 
-    if tzmin > tzmax:
-        tzmin, tzmax = tzmax, tzmin
+        if not (tmin > tzmax or tzmin > tmax):
+            # Update tmin/tmax with Z slab
+            if tzmin > tmin:
+                tmin = tzmin
+            if tzmax < tmax:
+                tmax = tzmax
 
-    if (tmin > tzmax) or (tzmin > tmax):
-        return -1.0
+            # Return the closest valid intersection
+            if tmin > 0.001:
+                t = tmin
 
-    if tzmin > tmin:
-        tmin = tzmin
-    if tzmax < tmax:
-        tmax = tzmax
-
-    if tmin > 0.001:
-        return tmin
-
-    return -1.0
+    return t
 
 @ti.func
 def cube_normal(point: ti.math.vec3, cube_center: ti.math.vec3, size: ti.f32) -> ti.math.vec3:
@@ -158,18 +162,21 @@ def cube_normal(point: ti.math.vec3, cube_center: ti.math.vec3, size: ti.f32) ->
     half_size = size * 0.5
     eps = 0.001
 
+    # Initialize with default normal
+    normal = ti.math.vec3(0, 0, 1)
+
     if ti.abs(point.x - (cube_center.x - half_size)) < eps:
-        return ti.math.vec3(-1, 0, 0)
+        normal = ti.math.vec3(-1, 0, 0)
     elif ti.abs(point.x - (cube_center.x + half_size)) < eps:
-        return ti.math.vec3(1, 0, 0)
+        normal = ti.math.vec3(1, 0, 0)
     elif ti.abs(point.y - (cube_center.y - half_size)) < eps:
-        return ti.math.vec3(0, -1, 0)
+        normal = ti.math.vec3(0, -1, 0)
     elif ti.abs(point.y - (cube_center.y + half_size)) < eps:
-        return ti.math.vec3(0, 1, 0)
+        normal = ti.math.vec3(0, 1, 0)
     elif ti.abs(point.z - (cube_center.z - half_size)) < eps:
-        return ti.math.vec3(0, 0, -1)
-    else:
-        return ti.math.vec3(0, 0, 1)
+        normal = ti.math.vec3(0, 0, -1)
+
+    return normal
 
 @ti.func
 def trace_ray(ray_origin: ti.math.vec3, ray_dir: ti.math.vec3, depth: ti.i32) -> ti.math.vec3:

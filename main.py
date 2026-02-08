@@ -409,9 +409,9 @@ class Scene:
     def setup_scene(self):
         """Setup the scene with objects and lights"""
         # Materials
-        red_mat = self.add_material((1.0, 0.2, 0.2), reflectivity=0.3)
+        red_mat = self.add_material((1.0, 0.2, 0.2), reflectivity=0.0)
         blue_mat = self.add_material((0.2, 0.2, 1.0), reflectivity=0.5)
-        green_mat = self.add_material((0.2, 1.0, 0.2), reflectivity=0.1)
+        green_mat = self.add_material((0.2, 1.0, 0.2), reflectivity=1.0)
         yellow_mat = self.add_material((1.0, 1.0, 0.2), reflectivity=0.2, roughness=0.1)
         gray_mat = self.add_material((0.7, 0.7, 0.7), reflectivity=0.05, roughness=0.3)
 

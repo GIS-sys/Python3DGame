@@ -419,7 +419,7 @@ class Scene:
         self.add_sphere((-2, 1, 0), 1.0, red_mat)
         self.add_sphere((2, 1, 0), 1.0, blue_mat)
         self.add_sphere((0, 1.5, -2), 1.0, green_mat)
-        self.add_cube((0, -1, 0), 10.0, yellow_mat)
+        self.add_cube((0, -1, 0), 1.0, yellow_mat)
         self.add_sphere((-1, 0.5, 2), 0.5, gray_mat)
         self.add_cube((3, 0.5, -1), 1.0, red_mat)
 
@@ -439,9 +439,9 @@ class Game:
         self.running = True
 
         # Camera in Python scope (will be converted to ti.math.vec3 for GPU)
-        self.camera_pos = [0.0, 2.0, 5.0]
-        self.camera_target = [0.0, 0.0, 0.0]
-        self.camera_up = [0.0, 1.0, 0.0]
+        self.camera_pos = [-10.0, 2.0, 0.0]
+        self.camera_target = [-9.0, 2.0, 0.0]
+        self.camera_up = [0.0, -1.0, 0.0]
 
         # Camera orientation
         self.yaw = 0.0
@@ -453,8 +453,6 @@ class Game:
             pygame.K_s: False,
             pygame.K_a: False,
             pygame.K_d: False,
-            pygame.K_q: False,
-            pygame.K_e: False,
             pygame.K_LSHIFT: False,
             pygame.K_SPACE: False
         }
@@ -480,7 +478,6 @@ class Game:
         print(f"Resolution: {WIDTH}x{HEIGHT}")
         print("Controls:")
         print("  WASD - Movement")
-        print("  Q/E - Roll left/right")
         print("  Shift/Space - Down/Up")
         print("  Mouse - Look around")
         print("  R - Reset accumulation")
@@ -633,8 +630,8 @@ class Game:
             length = math.sqrt(sum(d * d for d in dir_right))
             if length > 0:
                 dir_right = [d / length for d in dir_right]
-                self.camera_pos = [self.camera_pos[i] - dir_right[i] * move_speed for i in range(3)]
-                self.camera_target = [self.camera_target[i] - dir_right[i] * move_speed for i in range(3)]
+                self.camera_pos = [self.camera_pos[i] + dir_right[i] * move_speed for i in range(3)]
+                self.camera_target = [self.camera_target[i] + dir_right[i] * move_speed for i in range(3)]
 
         if self.keys[pygame.K_d]:
             # Strafe right
@@ -648,8 +645,8 @@ class Game:
             length = math.sqrt(sum(d * d for d in dir_right))
             if length > 0:
                 dir_right = [d / length for d in dir_right]
-                self.camera_pos = [self.camera_pos[i] + dir_right[i] * move_speed for i in range(3)]
-                self.camera_target = [self.camera_target[i] + dir_right[i] * move_speed for i in range(3)]
+                self.camera_pos = [self.camera_pos[i] - dir_right[i] * move_speed for i in range(3)]
+                self.camera_target = [self.camera_target[i] - dir_right[i] * move_speed for i in range(3)]
 
         if self.keys[pygame.K_SPACE]:
             # Move up
@@ -668,7 +665,6 @@ class Game:
         """Render the UI overlay"""
         # Convert GPU pixels to PyGame surface
         pixel_array = pixels.to_numpy()
-        pixel_array = np.swapaxes(pixel_array, 0, 1)
         surf = pygame.surfarray.make_surface(pixel_array * 255)
         self.screen.blit(surf, (0, 0))
 
@@ -708,6 +704,8 @@ class Game:
             current_time = time.time()
             dt = current_time - last_time
             last_time = current_time
+
+            print(self.camera_pos, self.camera_target, self.camera_up)
 
             # Handle input
             self.handle_events()

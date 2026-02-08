@@ -96,7 +96,10 @@ class SceneManager:
         gray_mat = self.add_material((0.7, 0.7, 0.7), reflectivity=0.05)
 
         # Objects
-        self.add_sphere((-2, 1, 0), 1.0, red_mat)
+        AMOUNT = 8
+        for i in range(AMOUNT*AMOUNT*AMOUNT):
+            i1, i2, i3 = i % AMOUNT, (i // AMOUNT) % AMOUNT, i // AMOUNT // AMOUNT
+            self.add_sphere((-2 + i1, 1 + i2, i3), 0.3, red_mat)
         self.add_sphere((2, 1, 0), 1.0, blue_mat)
         self.add_sphere((0, 1.5, -2), 1.0, green_mat)
         self.add_cube((0, -1, 0), 1.0, yellow_mat)

@@ -9,7 +9,7 @@ import taichi as ti
 ti.init(arch=ti.gpu, default_fp=ti.f32)
 
 # Constants
-WIDTH, HEIGHT = 640, 480
+WIDTH, HEIGHT = 1280, 960
 FOV = math.pi / 3  # 60 degrees
 MAX_DEPTH = 4
 BACKGROUND_COLOR = ti.Vector([0.1, 0.1, 0.15])
